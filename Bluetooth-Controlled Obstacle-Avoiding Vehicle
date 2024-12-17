@@ -1,0 +1,212 @@
+#include <LiquidCrystal.h>
+#include <NewPing.h>
+
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
+
+#define TRIG_PIN 13
+#define ECHO_PIN 12
+
+const int IN1 = A0; 
+const int IN2 = A1;   
+const int IN3 = A2; 
+const int IN4 = A3;                         
+const int ENA = 11;  
+const int ENB = 10; 
+
+const int buzzerPin = A4;
+const int RED_PIN = 2;
+const int GREEN_PIN = 3;
+const int BLUE_PIN = A5;
+
+int duration, distance;
+bool obstacleHandled = false;
+// Ensure each obstacle triggers stopping and buzzing
+
+char command = 'S';
+char lastCommand = 'S';
+
+unsigned long previousBuzzerTime = 0;
+const unsigned long distanceCheckInterval = 50; 
+bool buzzerActive = false;
+int buzzerCount = 0;  // Track the number of beeps
+const unsigned long buzzerInterval = 350;  // Interval between beeps
+
+NewPing sonar(TRIG_PIN, ECHO_PIN, 40);
+
+void setup() {
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENA, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENB, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(RED_PIN, OUTPUT);
+  pinMode(GREEN_PIN, OUTPUT);
+  pinMode(BLUE_PIN, OUTPUT);
+
+  Serial.begin(9600);
+  lcd.begin(16, 2);
+  lcd.print("Ready to go!");
+  delay(1000);
+  lcd.clear();
+}
+
+void loop() {
+  unsigned int timer = millis();
+  distance = sonar.ping_cm();
+
+  // RGB LED Logic
+  if (distance > 0 && distance < 20) { 
+    setLED(180, 0, 0); // Red
+    lcd.setCursor(0, 0);
+    lcd.print("Obstacle Ahead!  ");
+  } else if (distance >= 20 && distance < 60) {
+    setLED(180, 180, 0); // Yellow
+    lcd.setCursor(0, 0);
+    lcd.print("Approaching Obstacle...");
+  } else {
+    setLED(0, 180, 0); // Green
+    lcd.setCursor(0, 0);
+    lcd.print("No obstacle. Safe! ");
+  }
+
+  // Buzzer Logic: Only activate when distance < 30 cm
+  if (distance > 0 && distance < 20) { 
+    if (!buzzerActive) { // Activate buzzer only once per obstacle
+      buzzerActive = true;
+      buzzerCount = 0; // Reset beep count for a new obstacle
+      previousBuzzerTime = millis(); // Start timing for the first beep
+    }
+  }
+
+  // Handle Buzzer Beeping
+  if (buzzerActive) {
+    if (buzzerCount < 2 && millis() - previousBuzzerTime >= buzzerInterval) {
+      digitalWrite(buzzerPin, HIGH);
+      delay(100);  // Short beep
+      digitalWrite(buzzerPin, LOW);
+      buzzerCount++;
+      previousBuzzerTime = millis();
+    } else if (buzzerCount >= 2) {
+      buzzerActive = false; // Stop the buzzer after 2 beeps
+    }
+  }
+
+  // Vehicle Behavior
+  if (distance > 0 && distance <= 20) { 
+    if (lastCommand == 'F') {
+      stopMotors();  
+      Serial.println("Obstacle detected, stopping motors.");
+    }
+  }
+
+  // Bluetooth Command Handling
+  if (Serial.available()) {
+    command = Serial.read();
+    if (command == 'F' || command == 'B' || command == 'L' || command == 'R' || command == 'S') {
+      lastCommand = command;
+    }
+  }
+
+  switch (lastCommand) {
+    case 'F':
+      if (distance == 0) { 
+        moveForward();
+      }
+      break;
+    case 'B':
+      moveBackward();
+      break;
+    case 'L':
+      turnLeft();
+      break;
+    case 'R':
+      turnRight();
+      break;
+    case 'S':
+    default:
+      stopMotors();
+      break;
+  }
+
+  // Handle buzzer process
+  if (buzzerActive && buzzerCount < 2) {
+    if (millis() - previousBuzzerTime >= buzzerInterval) {
+      digitalWrite(buzzerPin, HIGH);
+      delay(100);  // Short beep
+      digitalWrite(buzzerPin, LOW);
+      buzzerCount++;
+      previousBuzzerTime = millis();
+    }
+    else if (buzzerCount >= 2) {
+    buzzerActive = false;  // Stop the buzzer after 3 beeps
+    buzzerCount = 0;
+  }
+}
+}
+
+void stopMotors() {
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+  Serial.println("Motors stopped");
+}
+
+
+void activateBuzzer() {
+  buzzerActive = true;
+  buzzerCount = 0;
+  previousBuzzerTime = millis();
+}
+
+
+void moveForward() {
+  analogWrite(ENA, 120);
+  analogWrite(ENB, 120);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+  Serial.println("Moving forward");
+}
+
+void moveBackward() {
+  analogWrite(ENA, 120);
+  analogWrite(ENB, 120);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+  Serial.println("Moving backward");
+}
+
+void turnLeft() {
+  analogWrite(ENA, 150);
+  analogWrite(ENB, 150);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+  Serial.println("Turning left");
+}
+
+void turnRight() {
+  analogWrite(ENA,150);
+  analogWrite(ENB, 150);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+  Serial.println("Turning right");
+}
+
+// Function to control RGB LED
+void setLED(int red, int green, int blue) {
+  analogWrite(RED_PIN, red);
+  analogWrite(GREEN_PIN, green);
+  analogWrite(BLUE_PIN, blue);
+}
